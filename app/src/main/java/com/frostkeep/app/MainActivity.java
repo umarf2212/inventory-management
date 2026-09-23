@@ -46,6 +46,9 @@ public class MainActivity extends Activity {
     void gap(LinearLayout l,int n){View v=new View(this);l.addView(v,new LinearLayout.LayoutParams(1,dp(n)));}
     void stretch(LinearLayout r,View v){r.addView(v,new LinearLayout.LayoutParams(0,-2,1));}
     TextView button(String label,boolean primary,Runnable action){TextView t=text(label,14,primary?Color.WHITE:GREEN,true);t.setGravity(Gravity.CENTER);t.setPadding(dp(16),dp(13),dp(16),dp(13));t.setMinHeight(dp(48));t.setBackground(shape(primary?GREEN:LINE,16));t.setOnClickListener(v->action.run());return t;}
+    void gapRow(LinearLayout r,int n){View v=new View(this);r.addView(v,new LinearLayout.LayoutParams(dp(n),1));}
+    TextView compactButton(String label,boolean primary,Runnable action){TextView t=text(label,12,primary?Color.WHITE:GREEN,true);t.setGravity(Gravity.CENTER);t.setPadding(dp(12),dp(8),dp(12),dp(8));t.setMinHeight(dp(36));t.setBackground(shape(primary?GREEN:LINE,12));t.setOnClickListener(v->action.run());return t;}
+    TextView iconButton(String icon,int textColor,int bgColor,Runnable action){TextView t=text(icon,14,textColor,true);t.setGravity(Gravity.CENTER);t.setPadding(dp(10),dp(6),dp(10),dp(6));t.setMinWidth(dp(36));t.setMinHeight(dp(36));t.setBackground(shape(bgColor,10));t.setOnClickListener(v->action.run());return t;}
     LinearLayout card(){LinearLayout l=col();l.setPadding(dp(18),dp(18),dp(18),dp(18));l.setBackground(shape(Color.WHITE,22));return l;}
     void addCard(LinearLayout parent,View card){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(12);parent.addView(card,p);}
     void label(LinearLayout l,String s){gap(l,14);l.addView(text(s,12,MUTED,true));gap(l,7);}
@@ -92,7 +95,7 @@ public class MainActivity extends Activity {
     LinearLayout form(){LinearLayout l=col();l.setPadding(dp(24),dp(8),dp(24),dp(16));return l;}
     EditText field(LinearLayout l,String title,String value,boolean decimal,boolean numeric){label(l,title);EditText e=new EditText(this);e.setText(value);e.setTextSize(16);e.setSingleLine();e.setInputType(numeric?android.text.InputType.TYPE_CLASS_NUMBER|(decimal?android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL:0):android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);l.addView(e,new LinearLayout.LayoutParams(-1,dp(48)));return e;}
     Spinner select(LinearLayout l,String title,String[] options,String selected){label(l,title);Spinner s=new Spinner(this);ArrayAdapter<String> a=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,options);s.setAdapter(a);s.setSelection(Math.max(0,Arrays.asList(options).indexOf(selected)));l.addView(s,new LinearLayout.LayoutParams(-1,dp(48)));return s;}
-    AlertDialog dialog(String title,LinearLayout f,String positive){ScrollView s=new ScrollView(this);s.addView(f);return new AlertDialog.Builder(this).setTitle(title).setView(s).setNegativeButton("Cancel",null).setPositiveButton(positive,null).create();}
+    AlertDialog dialog(String title,LinearLayout f,String positive){ScrollView s=new ScrollView(this);s.addView(f);AlertDialog.Builder b=new AlertDialog.Builder(this).setTitle(title).setView(s).setNegativeButton("Cancel",null);if(positive!=null)b.setPositiveButton(positive,null);return b.create();}
     void edit(Ledger.Item old){
         LinearLayout f=form();EditText name=field(f,"Item name",old==null?"":old.name,false,false);Spinner cat=select(f,"Category",Ledger.CATEGORIES,old==null?"Frozen":old.category);Spinner unit=select(f,"Stock unit",new String[]{"pack","bag","box","bottle","can","piece","sachet"},old==null?"pack":old.unit);
         EditText price=field(f,"Buying price per unit (₹)",old==null?"0":String.format(Locale.US,"%.2f",old.price/100.0),true,true),quantity=field(f,"Quantity in stock",old==null?"0":""+old.quantity,false,true),low=field(f,"Low-stock alert at",old==null?"5":""+old.low,false,true);
@@ -141,20 +144,20 @@ public class MainActivity extends Activity {
         for(Ledger.Sale s:history){LinearLayout entry=card();entry.addView(text(s.name,16,INK,true));gap(entry,6);entry.addView(text(s.customerName.isEmpty()?"Walk-in customer":s.customerName,12,GREEN,true));entry.addView(text(new SimpleDateFormat("dd MMM yyyy · h:mm a",Locale.getDefault()).format(new Date(s.time)),12,MUTED,false));gap(entry,12);LinearLayout r=row();stretch(r,text(s.quantity+" "+s.unit+"(s) × "+cash(s.price),13,MUTED,false));r.addView(text(cash(s.total()),18,INK,true));entry.addView(r);gap(entry,8);entry.addView(text(s.voided?"VOIDED · excluded from analytics":s.orderId.isEmpty()?"Recorded · tap to void":"Batch order · tap to view bill",11,s.voided?MUTED:GREEN,true));if(!s.orderId.isEmpty())entry.setOnClickListener(v->{for(Ledger.Order order:ledger.orders)if(order.id.equals(s.orderId))showBill(order);});else if(!s.voided)entry.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Void this sale?").setMessage("Restore "+s.quantity+" unit(s) to stock and exclude "+cash(s.total())+" from analytics. The record stays in your history.").setNegativeButton("Cancel",null).setPositiveButton("Void sale",(d,w)->{try{if(commit(()->ledger.voidSale(s)))render();}catch(IllegalArgumentException e){toast(e.getMessage());}}).show());addCard(content,entry);}
     }
     void empty(String title,String subtitle){LinearLayout c=card();c.addView(text(title,20,INK,true));gap(c,10);c.addView(text(subtitle,14,MUTED,false));addCard(content,c);}
-    void insights(){title("See the bigger picture.","Small insights. Smarter restocking.");LinearLayout tabs=row();stretch(tabs,button("7 days",days==7,()->{days=7;render();}));View space=new View(this);tabs.addView(space,new LinearLayout.LayoutParams(dp(8),1));stretch(tabs,button("30 days",days==30,()->{days=30;render();}));content.addView(tabs);gap(content,20);
+    void insights(){title("See the bigger picture.","Small insights. Smarter restocking.");LinearLayout tabs=row();stretch(tabs,button("Today",days==1,()->{days=1;render();}));gapRow(tabs,8);stretch(tabs,button("7 days",days==7,()->{days=7;render();}));gapRow(tabs,8);stretch(tabs,button("30 days",days==30,()->{days=30;render();}));content.addView(tabs);gap(content,20);
         long since=start(days-1),revenue=ledger.revenue(since);long units=0;int transactions=0;Set<String> transactionIds=new HashSet<>();Map<String,Long> categories=new LinkedHashMap<>(),products=new HashMap<>();for(String c:Ledger.CATEGORIES)categories.put(c,0L);
         for(Ledger.Sale s:ledger.sales)if(!s.voided&&s.time>=since){units+=s.quantity;transactionIds.add(s.orderId.isEmpty()?s.id:s.orderId);transactions=transactionIds.size();categories.put(s.category,categories.getOrDefault(s.category,0L)+s.total());products.put(s.name,products.getOrDefault(s.name,0L)+s.total());}
-        LinearLayout summary=card();summary.setBackground(shape(INK,24));summary.addView(text("REVENUE · LAST "+days+" DAYS",11,LIME,true));gap(summary,8);summary.addView(text(cash(revenue),34,Color.WHITE,true));gap(summary,12);summary.addView(text(units+" units sold    ·    "+transactions+" sales",14,Color.rgb(203,219,205),false));addCard(content,summary);
+        LinearLayout summary=card();summary.setBackground(shape(INK,24));summary.addView(text(days==1?"TODAY’S REVENUE":"REVENUE · LAST "+days+" DAYS",11,LIME,true));gap(summary,8);summary.addView(text(cash(revenue),34,Color.WHITE,true));gap(summary,12);summary.addView(text(units+" units sold    ·    "+transactions+" sales",14,Color.rgb(203,219,205),false));addCard(content,summary);
         LinearLayout profit=card();profit.addView(text(ledger.costsKnown(since)?"GROSS PROFIT":"GROSS PROFIT · KNOWN COSTS ONLY",11,MUTED,true));gap(profit,8);
         profit.addView(text(cash(ledger.profit(since)),25,GREEN,true));gap(profit,6);
         profit.addView(text("Selling revenue minus buying costs saved with each sale. Pending orders are included; expenses are excluded.",12,MUTED,false));
         if(!ledger.costsKnown(since)){gap(profit,6);profit.addView(text("Some sales have no confirmed buying cost and are excluded from profit.",12,MUTED,false));}addCard(content,profit);
-        LinearLayout chart=card();chart.addView(text("Sales over time",19,INK,true));gap(chart,5);chart.addView(text("Daily revenue (₹)",12,MUTED,false));gap(chart,12);double[] values=new double[days];for(Ledger.Sale s:ledger.sales)if(!s.voided&&s.time>=since){long offset=java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now().minusDays(days-1),Instant.ofEpochMilli(s.time).atZone(ZoneId.systemDefault()).toLocalDate());if(offset>=0&&offset<days)values[(int)offset]+=s.total()/100.0;}Chart graph=new Chart(values);graph.setContentDescription("Daily sales revenue chart. Total "+cash(revenue)+" over "+days+" days.");chart.addView(graph,new LinearLayout.LayoutParams(-1,dp(180)));if(transactions==0)chart.addView(text("Record a sale to start your graph.",12,MUTED,false));addCard(content,chart);
+        LinearLayout chart=card();chart.addView(text("Sales over time",19,INK,true));gap(chart,5);chart.addView(text("Daily revenue (₹)",12,MUTED,false));gap(chart,12);double[] values=new double[days];for(Ledger.Sale s:ledger.sales)if(!s.voided&&s.time>=since){long offset=java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now().minusDays(days-1),Instant.ofEpochMilli(s.time).atZone(ZoneId.systemDefault()).toLocalDate());if(offset>=0&&offset<days)values[(int)offset]+=s.total()/100.0;}Chart graph=new Chart(values);graph.setContentDescription(days==1?"Today’s sales revenue chart. Total "+cash(revenue)+".":"Daily sales revenue chart. Total "+cash(revenue)+" over "+days+" days.");chart.addView(graph,new LinearLayout.LayoutParams(-1,dp(180)));if(transactions==0)chart.addView(text("Record a sale to start your graph.",12,MUTED,false));addCard(content,chart);
         LinearLayout cats=card();cats.addView(text("By category",19,INK,true));gap(cats,16);for(Map.Entry<String,Long> e:categories.entrySet()){LinearLayout r=row();stretch(r,text(e.getKey(),14,INK,false));r.addView(text(cash(e.getValue()),14,INK,true));cats.addView(r);gap(cats,8);ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(1000);bar.setProgress(revenue==0?0:(int)(e.getValue()*1000/revenue));bar.setProgressTintList(android.content.res.ColorStateList.valueOf(GREEN));bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(LINE));cats.addView(bar,new LinearLayout.LayoutParams(-1,dp(6)));gap(cats,16);}addCard(content,cats);
         LinearLayout best=card();best.addView(text("Top items",19,INK,true));gap(best,6);best.addView(text("Ranked by sales revenue",12,MUTED,false));ArrayList<Map.Entry<String,Long>> sorted=new ArrayList<>(products.entrySet());sorted.sort((a,b)->Long.compare(b.getValue(),a.getValue()));if(sorted.isEmpty()){gap(best,14);best.addView(text("Your bestsellers will appear here.",14,MUTED,false));}for(int n=0;n<Math.min(5,sorted.size());n++){gap(best,18);LinearLayout r=row();stretch(r,text((n+1)+".  "+sorted.get(n).getKey(),14,INK,false));r.addView(text(cash(sorted.get(n).getValue()),14,GREEN,true));best.addView(r);}addCard(content,best);content.addView(text("Revenue uses recorded selling prices. Voided sales are excluded. All dates use your device’s time zone.",12,MUTED,false));
     }
     class Chart extends View {double[] data;Paint paint=new Paint(3);Chart(double[] d){super(MainActivity.this);data=d;}void line(Canvas c,float x,float y,float xx,float yy,int color){paint.setColor(color);paint.setStrokeWidth(dp(1));c.drawLine(x,y,xx,yy,paint);}void words(Canvas c,String s,float x,float y,int color){paint.setColor(color);paint.setTextSize(dp(10));c.drawText(s,x,y,paint);}
-        protected void onDraw(Canvas c){super.onDraw(c);float left=dp(47),right=getWidth()-dp(4),top=dp(14),bottom=getHeight()-dp(28);double max=0;for(double d:data)max=Math.max(max,d);max=max==0?100:Math.ceil(max/10)*10;for(int n=0;n<=2;n++){float y=top+(bottom-top)*n/2;line(c,left,y,right,y,LINE);double v=max*(2-n)/2;words(c,v>=1000000?String.format(Locale.US,"%.1fM",v/1000000):v>=1000?String.format(Locale.US,"%.1fk",v/1000):String.format(Locale.US,"%.0f",v),0,y+dp(4),MUTED);}float step=(right-left)/data.length;for(int i=0;i<data.length;i++){paint.setColor(i==data.length-1?GREEN:Color.rgb(174,203,141));float h=(float)(data[i]/max)*(bottom-top);if(h>0)c.drawRoundRect(left+i*step+dp(2),bottom-h,left+(i+1)*step-dp(2),bottom,dp(4),dp(4),paint);}words(c,LocalDate.now().minusDays(data.length-1).format(java.time.format.DateTimeFormatter.ofPattern("d MMM")),left,bottom+dp(21),MUTED);words(c,"Today",right-dp(30),bottom+dp(21),MUTED);}
+        protected void onDraw(Canvas c){super.onDraw(c);float left=dp(47),right=getWidth()-dp(4),top=dp(14),bottom=getHeight()-dp(28);double max=0;for(double d:data)max=Math.max(max,d);max=max==0?100:Math.ceil(max/10)*10;for(int n=0;n<=2;n++){float y=top+(bottom-top)*n/2;line(c,left,y,right,y,LINE);double v=max*(2-n)/2;words(c,v>=1000000?String.format(Locale.US,"%.1fM",v/1000000):v>=1000?String.format(Locale.US,"%.1fk",v/1000):String.format(Locale.US,"%.0f",v),0,y+dp(4),MUTED);}float step=(right-left)/data.length;for(int i=0;i<data.length;i++){paint.setColor(i==data.length-1?GREEN:Color.rgb(174,203,141));float h=(float)(data[i]/max)*(bottom-top);if(h>0){float w=data.length==1?dp(48):step-dp(4);float l=data.length==1?(left+right-w)/2:left+i*step+dp(2);c.drawRoundRect(l,bottom-h,l+w,bottom,dp(4),dp(4),paint);}}if(data.length>1){words(c,LocalDate.now().minusDays(data.length-1).format(java.time.format.DateTimeFormatter.ofPattern("d MMM")),left,bottom+dp(21),MUTED);words(c,"Today",right-dp(30),bottom+dp(21),MUTED);}else{words(c,"Today · "+LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("d MMM")),left,bottom+dp(21),MUTED);}}
     }
     String decimal(long price) { return java.math.BigDecimal.valueOf(price,2).toPlainString(); }
     TextWatcher watcher(Runnable action) {
@@ -162,7 +165,9 @@ public class MainActivity extends Activity {
     }
     class DateInput {
         LocalDate date=LocalDate.now(); final TextView view;
-        DateInput(LinearLayout parent,String labelText) {
+        DateInput(LinearLayout parent,String labelText) { this(parent,labelText,0); }
+        DateInput(LinearLayout parent,String labelText,long initialTime) {
+            if(initialTime>0) date=Instant.ofEpochMilli(initialTime).atZone(ZoneId.systemDefault()).toLocalDate();
             label(parent,labelText); view=button("",false,this::pick); parent.addView(view); update();
         }
         void update(){view.setText(date.format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy"))+"  ·  Change date");}
@@ -210,23 +215,39 @@ public class MainActivity extends Activity {
     void customerDetails(Ledger.Customer customer) {
         LinearLayout f=form();f.addView(text(customer.phone.isEmpty()?"No phone added":customer.phone,14,MUTED,false));gap(f,12);
         AlertDialog d=new AlertDialog.Builder(this).setTitle(customer.name).setView(scrollForm(f)).setNegativeButton("Close",null).create();
-        f.addView(button("Edit name & phone",false,()->{d.dismiss();editCustomer(customer);}));gap(f,10);
-        f.addView(button("＋ Quote a product",true,()->{
+        LinearLayout act=row();
+        stretch(act,compactButton("Edit details",false,()->{d.dismiss();editCustomer(customer);}));gapRow(act,8);
+        stretch(act,compactButton("＋ Quote product",true,()->{
             if(ledger.items.isEmpty()){toast("Add inventory products first.");return;}
             String[] names=new String[ledger.items.size()];for(int n=0;n<names.length;n++)names[n]=ledger.items.get(n).name;
             new AlertDialog.Builder(this).setTitle("Choose a product").setItems(names,(a,n)->{d.dismiss();quote(customer,ledger.items.get(n));}).setNegativeButton("Cancel",null).show();
-        }));label(f,"QUOTED SELLING PRICES");
+        }));
+        f.addView(act);label(f,"QUOTED SELLING PRICES");
         if(customer.quotes.isEmpty())f.addView(text("No quotes yet. Add a product to set this customer’s selling price.",14,MUTED,false));
+        int quoteNum=1;
         for(Map.Entry<String,Long> entry:customer.quotes.entrySet()) {
-            Ledger.Item item=ledger.find(entry.getKey());LinearLayout c=card();
-            c.addView(text(item==null?"Deleted product":item.name,16,INK,true));gap(c,6);c.addView(text(cash(entry.getValue())+" per "+(item==null?"unit":item.unit),16,GREEN,true));gap(c,10);
-            if(item!=null)c.addView(button("Edit quote",false,()->{d.dismiss();quote(customer,item);}));
-            gap(c,8);c.addView(button("Remove quote",false,()->new AlertDialog.Builder(this).setTitle("Remove quoted price?")
-                .setMessage("Existing sales and bills keep their recorded prices.").setNegativeButton("Cancel",null).setPositiveButton("Remove",(a,b)->{
+            final int currentNum=quoteNum++;
+            Ledger.Item item=ledger.find(entry.getKey());
+            LinearLayout c=card();
+            c.setPadding(dp(14),dp(10),dp(14),dp(10));
+            LinearLayout r=row();
+            LinearLayout info=col();
+            info.addView(text(currentNum+". "+(item==null?"Deleted product":item.name),15,INK,true));gap(info,3);
+            info.addView(text(cash(entry.getValue())+" / "+(item==null?"unit":item.unit),13,GREEN,true));
+            stretch(r,info);
+            if(item!=null) {
+                r.addView(compactButton("Edit",false,()->{d.dismiss();quote(customer,item);}));
+                gapRow(r,6);
+            }
+            r.addView(iconButton("🗑",Color.rgb(214,61,57),Color.rgb(254,237,237),()->new AlertDialog.Builder(this).setTitle("Remove quote?")
+                .setMessage("Remove quoted price for "+(item==null?"this product":item.name)+"? Existing sales and bills keep their recorded prices.")
+                .setNegativeButton("Cancel",null).setPositiveButton("Remove",(a,b)->{
                     if(commit(()->customer.quotes.remove(entry.getKey()))){d.dismiss();render();customerDetails(customer);}
-                }).show()));addCard(f,c);
+                }).show()));
+            c.addView(r);
+            addCard(f,c);
         }
-        gap(f,20);f.addView(button("Delete customer",false,()->new AlertDialog.Builder(this).setTitle("Delete customer?")
+        gap(f,16);f.addView(compactButton("Delete customer",false,()->new AlertDialog.Builder(this).setTitle("Delete customer?")
             .setMessage("Remove "+customer.name+" and their quotes? Existing sales, orders and pending payments remain in history.")
             .setNegativeButton("Cancel",null).setPositiveButton("Delete",(a,b)->{if(commit(()->ledger.customers.remove(customer))){d.dismiss();render();}}).show()));d.show();
     }
@@ -253,12 +274,28 @@ public class MainActivity extends Activity {
             if(pendingOrdersOnly&&(order.paid||order.voided))continue;shown++;
             LinearLayout c=card();LinearLayout r=row();stretch(r,text(order.customerName,20,INK,true));r.addView(text(cash(order.total()),18,GREEN,true));c.addView(r);gap(c,8);
             c.addView(text(order.number+" · "+dateText(order.time)+" · "+order.lines.size()+" products",12,MUTED,false));gap(c,10);
-            c.addView(text(order.voided?"VOIDED":order.paid?"PAID":"PENDING PAYMENT",12,order.paid?GREEN:Color.rgb(158,103,43),true));gap(c,10);
-            c.addView(button("View bill & payment  ›",false,()->showBill(order)));addCard(content,c);
+            c.addView(text(order.voided?"VOIDED":order.paid?"PAID":"PENDING PAYMENT",12,order.paid?GREEN:Color.rgb(158,103,43),true));gap(c,12);
+            if(order.voided) {
+                c.addView(compactButton("View bill  ›",false,()->showBill(order)));
+            } else {
+                LinearLayout acts=row();
+                stretch(acts,compactButton("Edit order",false,()->editOrder(order)));
+                gapRow(acts,8);
+                stretch(acts,compactButton("Generate bill  ›",true,()->showBill(order)));
+                c.addView(acts);
+            }
+            c.setOnClickListener(v->showBill(order));
+            addCard(content,c);
         }
         if(shown==0)empty(pendingOrdersOnly?"All caught up.":"Build your first batch.",pendingOrdersOnly?"No pending payments to show.":"Choose a customer, add their products and quantities, then generate a bill.");
     }
     String dateText(long time){return new SimpleDateFormat("dd MMM yyyy",Locale.getDefault()).format(new Date(time));}
+    void editOrder(Ledger.Order order) {
+        if(order.voided) { toast("Voided orders cannot be edited."); return; }
+        Ledger.Customer cust=ledger.customer(order.customerId);
+        if(cust==null) { cust=new Ledger.Customer(); cust.id=order.customerId; cust.name=order.customerName; cust.phone=order.phone; }
+        new BatchComposer(cust,order).show();
+    }
     void chooseOrderCustomer() {
         if(ledger.customers.isEmpty()){new AlertDialog.Builder(this).setTitle("Add a customer first").setMessage("Each batch order belongs to a customer.").setNegativeButton("Cancel",null).setPositiveButton("Add customer",(d,w)->{screen="Customers";render();editCustomer(null);}).show();return;}
         String[] names=new String[ledger.customers.size()];for(int n=0;n<names.length;n++)names[n]=ledger.customers.get(n).name;
@@ -266,58 +303,217 @@ public class MainActivity extends Activity {
     }
     class BatchComposer {
         final Ledger.Customer customer;
+        final Ledger.Order existingOrder;
         final LinearLayout form=form(), lines=col();
         final ArrayList<BatchRow> rows=new ArrayList<>();
         final DateInput date;
         final Spinner payment;
-        final TextView summary=text("Add a product to begin",18,GREEN,true);
+        final TextView summary=text("Add a product to begin",17,GREEN,true);
         final AlertDialog dialog;
-        BatchComposer(Ledger.Customer customer) {
-            this.customer=customer;form.addView(text(customer.name,22,INK,true));gap(form,6);
-            form.addView(text("Customer quotes fill automatically. You can override the price for this order.",13,MUTED,false));
-            date=new DateInput(form,"Order date");payment=select(form,"Payment status",new String[]{"Pending payment","Paid"},"Pending payment");
-            gap(form,12);form.addView(lines);form.addView(button("＋ Add product",false,this::addProduct));gap(form,18);form.addView(summary);
-            label(form,"Generating the bill records sales and deducts stock, even if payment is pending.");
-            dialog=dialog("New batch order",form,"Generate bill");
-            dialog.setOnShowListener(x->dialog.getButton(-1).setOnClickListener(v->{try{
-                ArrayList<Ledger.OrderLine> requested=new ArrayList<>();for(BatchRow r:rows)requested.add(r.line());
-                Ledger.Order[] created=new Ledger.Order[1];
-                if(commit(()->created[0]=ledger.createOrder(customer,requested,payment.getSelectedItemPosition()==1,date.time()))) {
-                    dialog.dismiss();screen="Orders";render();showBill(created[0]);
+        BatchComposer(Ledger.Customer customer) { this(customer, null); }
+        BatchComposer(Ledger.Customer customer, Ledger.Order existingOrder) {
+            this.customer=customer;
+            this.existingOrder=existingOrder;
+            EditText dummy=new EditText(MainActivity.this);dummy.setVisibility(View.GONE);form.addView(dummy);
+            form.addView(text(customer.name,22,INK,true));gap(form,6);
+            form.addView(text(existingOrder==null?"Customer quotes fill automatically. You can override the price for this order.":"Edit quantities and selling prices for this order. Stock updates automatically.",13,MUTED,false));
+            date=new DateInput(form,"Order date",existingOrder==null?0:existingOrder.time);
+            payment=select(form,"Payment status",new String[]{"Pending payment","Paid"},existingOrder!=null&&existingOrder.paid?"Paid":"Pending payment");
+            gap(form,12);form.addView(lines);
+            form.addView(compactButton("＋ Add product",false,this::addProduct));
+            gap(form,16);form.addView(summary);gap(form,10);
+            label(form,existingOrder==null?"Saving or generating the bill records sales and deducts stock.":"Saving changes updates sales records and adjusts stock.");
+            gap(form,6);
+            LinearLayout btnRow=row();
+            stretch(btnRow,button(existingOrder==null?"Submit":"Save changes",false,()->saveOrder(false)));
+            gapRow(btnRow,10);
+            stretch(btnRow,button(existingOrder==null?"Generate bill":"Update & bill",true,()->saveOrder(true)));
+            form.addView(btnRow);
+            dialog=dialog(existingOrder==null?"New batch order":"Edit order · "+existingOrder.number,form,null);
+            dialog.setOnShowListener(d->{
+                if(dialog.getWindow()!=null){
+                    dialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+                    dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
                 }
-            }catch(IllegalArgumentException e){toast(e.getMessage());}}));
+            });
+            if(existingOrder!=null) {
+                for(Ledger.Sale sale:existingOrder.lines) {
+                    Ledger.Item item=ledger.find(sale.itemId);
+                    if(item!=null) {
+                        BatchRow r=new BatchRow(item,sale.quantity,decimal(sale.price));
+                        rows.add(r);lines.addView(r.view);
+                    }
+                }
+                renumberRows();update();
+            }
         }
-        void show(){dialog.show();}
+        void show(){
+            dialog.show();
+            if(dialog.getWindow()!=null){
+                dialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+                dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+            }
+        }
+        void renumberRows(){
+            for(int i=0;i<rows.size();i++) rows.get(i).setNumber(i+1);
+        }
+        int getOriginalQty(String itemId) {
+            if(existingOrder==null) return 0;
+            for(Ledger.Sale s:existingOrder.lines) if(s.itemId.equals(itemId)) return s.quantity;
+            return 0;
+        }
         void addProduct(){
-            ArrayList<Ledger.Item> available=new ArrayList<>();for(Ledger.Item i:ledger.items)if(i.quantity>0&&rows.stream().noneMatch(r->r.item.id.equals(i.id)))available.add(i);
+            ArrayList<Ledger.Item> available=new ArrayList<>();
+            for(Ledger.Item i:ledger.items) {
+                if(rows.stream().anyMatch(r->r.item.id.equals(i.id))) continue;
+                int maxAvailable=i.quantity+getOriginalQty(i.id);
+                if(maxAvailable>0) available.add(i);
+            }
             if(available.isEmpty()){toast("No more products with available stock. Restock items in Inventory first.");return;}
-            String[] names=new String[available.size()];for(int n=0;n<names.length;n++)names[n]=available.get(n).name+" · "+available.get(n).quantity+" available";
+            String[] names=new String[available.size()];
+            for(int n=0;n<names.length;n++){
+                int maxAvailable=available.get(n).quantity+getOriginalQty(available.get(n).id);
+                names[n]=available.get(n).name+" · "+maxAvailable+" available";
+            }
             new AlertDialog.Builder(MainActivity.this).setTitle("Add product").setItems(names,(d,n)->{
-                BatchRow row=new BatchRow(available.get(n));rows.add(row);lines.addView(row.view);update();
+                Ledger.Item item=available.get(n);
+                Long quote=customer.quotes.get(item.id);
+                BatchRow row=new BatchRow(item,1,quote==null?"":decimal(quote));
+                rows.add(row);lines.addView(row.view);
+                renumberRows();update();
+                if(dialog.getWindow()!=null){
+                    dialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+                    dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+                }
             }).setNegativeButton("Cancel",null).show();
         }
         void update(){
             long total=0,profit=0;boolean known=true;
-            try{for(BatchRow r:rows){Ledger.OrderLine l=r.line();total+=l.price*l.quantity;if(r.item.costConfirmed)profit+=(l.price-r.item.price)*l.quantity;else known=false;}
+            try{
+                for(BatchRow r:rows){
+                    Ledger.OrderLine l=r.line();
+                    total+=l.price*l.quantity;
+                    if(r.item.costConfirmed)profit+=(l.price-r.item.price)*l.quantity;else known=false;
+                }
                 summary.setText("Grand total  "+cash(total)+"\n"+(known?"Gross profit  "+cash(profit):"Profit needs confirmed buying costs"));
             }catch(IllegalArgumentException e){summary.setText("Complete each quantity and selling price to see the total.");}
         }
+        void saveOrder(boolean openBill){
+            try{
+                ArrayList<Ledger.OrderLine> requested=new ArrayList<>();
+                for(BatchRow r:rows) requested.add(r.line());
+                if(requested.isEmpty()) throw new IllegalArgumentException("Add at least one product.");
+                boolean paid=payment.getSelectedItemPosition()==1;
+                long time=date.time();
+                if(existingOrder==null) {
+                    Ledger.Order[] created=new Ledger.Order[1];
+                    if(commit(()->created[0]=ledger.createOrder(customer,requested,paid,time))){
+                        dialog.dismiss();screen="Orders";render();
+                        if(openBill) showBill(created[0]);
+                        else toast("Order "+created[0].number+" submitted to batch orders");
+                    }
+                } else {
+                    if(commit(()->ledger.updateOrder(existingOrder,requested,paid,time))){
+                        dialog.dismiss();screen="Orders";render();
+                        if(openBill) showBill(existingOrder);
+                        else toast("Order "+existingOrder.number+" updated");
+                    }
+                }
+            }catch(IllegalArgumentException e){toast(e.getMessage());}
+        }
         class BatchRow {
-            final Ledger.Item item;final LinearLayout view=card();final EditText quantity,price;
-            BatchRow(Ledger.Item item){
-                this.item=item;view.addView(text(item.name,17,INK,true));gap(view,5);view.addView(text(item.quantity+" "+item.unit+"(s) available",12,MUTED,false));
-                quantity=field(view,"Quantity","1",false,true);Long quote=customer.quotes.get(item.id);
-                price=field(view,quote==null?"Selling price (₹) · no quote saved":"Selling price (₹) · customer quote",quote==null?"":decimal(quote),true,true);
-                quantity.addTextChangedListener(watcher(BatchComposer.this::update));price.addTextChangedListener(watcher(BatchComposer.this::update));gap(view,8);
-                view.addView(button("Remove product",false,()->{rows.remove(this);lines.removeView(view);update();}));
+            final Ledger.Item item;
+            final LinearLayout view=card();
+            final TextView title;
+            final EditText quantity,price;
+            final int originalQty;
+            void showKeyboard(View v){
+                v.requestFocus();
+                if(dialog.getWindow()!=null){
+                    dialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+                }
+                android.view.inputmethod.InputMethodManager imm=(android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
+                if(imm!=null) imm.showSoftInput(v,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
             }
-            Ledger.OrderLine line(){int q=Ledger.parseQuantity(quantity.getText().toString());long p=Ledger.parsePrice(price.getText().toString());if(q<=0||q>item.quantity||p<=0)throw new IllegalArgumentException("Check "+item.name+": use a positive price and quantity within available stock.");return new Ledger.OrderLine(item.id,q,p);}
+            BatchRow(Ledger.Item item,int initialQty,String initialPrice){
+                this.item=item;
+                this.originalQty=getOriginalQty(item.id);
+                view.setPadding(dp(14),dp(12),dp(14),dp(12));
+                
+                LinearLayout top=row();
+                title=text(item.name,15,INK,true);
+                stretch(top,title);
+                TextView delBtn=iconButton("🗑",Color.rgb(214,61,57),Color.rgb(254,237,237),()->{
+                    rows.remove(this);lines.removeView(view);renumberRows();update();
+                });
+                top.addView(delBtn);
+                view.addView(top);
+                gap(view,3);
+                int maxAvailable=item.quantity+originalQty;
+                view.addView(text(maxAvailable+" "+item.unit+"(s) available",12,MUTED,false));
+                gap(view,8);
+                
+                LinearLayout inputs=row();
+                LinearLayout qtyCol=col();
+                qtyCol.addView(text("Quantity ("+item.unit+")",11,MUTED,true));gap(qtyCol,4);
+                quantity=new EditText(MainActivity.this);
+                quantity.setText(String.valueOf(initialQty));
+                quantity.setTextSize(15);
+                quantity.setSingleLine();
+                quantity.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+                quantity.setPadding(dp(10),dp(8),dp(10),dp(8));
+                GradientDrawable qBg=shape(Color.WHITE,10);
+                qBg.setStroke(dp(1),LINE);
+                quantity.setBackground(qBg);
+                qtyCol.addView(quantity,new LinearLayout.LayoutParams(-1,dp(42)));
+                stretch(inputs,qtyCol);
+                
+                gapRow(inputs,10);
+                
+                LinearLayout priceCol=col();
+                priceCol.addView(text("Selling price (₹)",11,MUTED,true));gap(priceCol,4);
+                price=new EditText(MainActivity.this);
+                price.setText(initialPrice);
+                price.setHint("Price per "+item.unit);
+                price.setTextSize(15);
+                price.setSingleLine();
+                price.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+                price.setPadding(dp(10),dp(8),dp(10),dp(8));
+                GradientDrawable pBg=shape(Color.WHITE,10);
+                pBg.setStroke(dp(1),LINE);
+                price.setBackground(pBg);
+                priceCol.addView(price,new LinearLayout.LayoutParams(-1,dp(42)));
+                stretch(inputs,priceCol);
+                
+                view.addView(inputs);
+                quantity.addTextChangedListener(watcher(BatchComposer.this::update));
+                price.addTextChangedListener(watcher(BatchComposer.this::update));
+                quantity.setOnClickListener(this::showKeyboard);
+                quantity.setOnFocusChangeListener((v,f)->{if(f)showKeyboard(v);});
+                price.setOnClickListener(this::showKeyboard);
+                price.setOnFocusChangeListener((v,f)->{if(f)showKeyboard(v);});
+            }
+            void setNumber(int num){ title.setText(num+". "+item.name); }
+            Ledger.OrderLine line(){
+                int q=Ledger.parseQuantity(quantity.getText().toString());
+                long p=Ledger.parsePrice(price.getText().toString());
+                int maxAvailable=item.quantity+originalQty;
+                if(q<=0||q>maxAvailable||p<=0)
+                    throw new IllegalArgumentException("Check "+item.name+": enter a positive price and quantity within stock ("+maxAvailable+" max).");
+                return new Ledger.OrderLine(item.id,q,p);
+            }
         }
     }
     void showBill(Ledger.Order order) {
         LinearLayout f=form();String bill=Billing.text(order);TextView message=text(bill,15,INK,false);message.setTextIsSelectable(true);f.addView(message);
-        if(!order.voided){label(f,"FOR YOUR RECORDS");f.addView(text(order.costKnown()?"Gross profit: "+cash(order.profit())+(order.total()>0?String.format(Locale.US," · %.1f%% margin",100.0*order.profit()/order.total()):""):"Gross profit unavailable: buying costs were not confirmed for all products.",14,GREEN,true));}
-        gap(f,18);AlertDialog d=new AlertDialog.Builder(this).setTitle(order.number+" · Bill").setView(scrollForm(f)).setNegativeButton("Close",null).create();
+        AlertDialog d=new AlertDialog.Builder(this).setTitle(order.number+" · Bill").setView(scrollForm(f)).setNegativeButton("Close",null).create();
+        if(!order.voided){
+            label(f,"FOR YOUR RECORDS");
+            f.addView(text(order.costKnown()?"Gross profit: "+cash(order.profit())+(order.total()>0?String.format(Locale.US," · %.1f%% margin",100.0*order.profit()/order.total()):""):"Gross profit unavailable: buying costs were not confirmed for all products.",14,GREEN,true));
+            gap(f,8);
+            f.addView(compactButton("Edit order items & prices",false,()->{d.dismiss();editOrder(order);}));
+        }
+        gap(f,18);
         f.addView(button("Copy bill text",true,()->copy("Bill "+order.number,bill)));gap(f,10);
         Ledger.Customer customer=ledger.customer(order.customerId);String phone=customer==null?order.phone:customer.phone;
         if(!phone.isEmpty()) {

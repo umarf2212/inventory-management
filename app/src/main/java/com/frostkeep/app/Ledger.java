@@ -113,6 +113,40 @@ public final class Ledger {
         }
         orders.add(0, order); return order;
     }
+    public void updateOrder(Order order, List<OrderLine> requested, boolean paid, long time) {
+        if(!orders.contains(order) || order.voided) throw new IllegalArgumentException("A voided order cannot be edited.");
+        if(requested.isEmpty()) throw new IllegalArgumentException("Add at least one product.");
+        Set<String> seen = new HashSet<>();
+        for(OrderLine line:requested) {
+            if(!seen.add(line.itemId)) throw new IllegalArgumentException("Combine duplicate products into one line.");
+        }
+        for(Sale s:order.lines) {
+            Item item = find(s.itemId);
+            if(item == null) throw new IllegalArgumentException("Cannot update order: an item in the order was deleted.");
+            if((long)item.quantity + s.quantity > 1000000)
+                throw new IllegalArgumentException("Restoring stock for this order exceeds the stock limit.");
+        }
+        for(OrderLine line:requested) {
+            if(find(line.itemId) == null) throw new IllegalArgumentException("Choose an existing product.");
+        }
+        for(Sale s:order.lines) find(s.itemId).quantity += s.quantity;
+        try {
+            for(OrderLine line:requested) validateSale(find(line.itemId), line.quantity, line.price, time);
+        } catch(RuntimeException e) {
+            for(Sale s:order.lines) find(s.itemId).quantity -= s.quantity;
+            throw e;
+        }
+        sales.removeAll(order.lines);
+        order.lines.clear();
+        order.time = time;
+        order.paid = paid;
+        Customer customer = customer(order.customerId);
+        for(OrderLine line:requested) {
+            Sale sale = sell(find(line.itemId), line.quantity, line.price, time, customer);
+            sale.orderId = order.id;
+            order.lines.add(sale);
+        }
+    }
     public void setPaid(Order order, boolean paid) {
         if(!orders.contains(order) || order.voided) throw new IllegalArgumentException("A voided order cannot change payment status.");
         order.paid = paid;

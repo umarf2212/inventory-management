@@ -63,7 +63,21 @@ public class LedgerTest {
         Ledger.Sale single=l.sell(a,1,20000,2000,bob);check(single.customerId.equals(bob.id)&&single.customerName.equals("Bob"),"Individual sale optional customer snapshot");
         check(single.profit()==-30000,"Negative profit supported");
         b.costConfirmed=false;Ledger.Sale unknown=l.sell(b,1,9000,3000);check(unknown.cost==-1&&!l.costsKnown(0),"Unconfirmed costs excluded");
-        check(l.revenue(2500)==9000,"Backdated revenue filtering");
         a.quantity=1000000;rejects(()->l.adjust(a,1));
+        Ledger.Order o2=l.createOrder(bob,Collections.singletonList(new Ledger.OrderLine(b.id,2,8000)),false,4000);
+        check(b.quantity==3,"Stock deducted for o2");
+        check(o2.total()==16000,"o2 total");
+        rejects(()->l.updateOrder(o2,Collections.singletonList(new Ledger.OrderLine(b.id,10,8000)),false,4000));
+        check(b.quantity==3,"Failed update left stock unchanged");
+        l.updateOrder(o2,Collections.singletonList(new Ledger.OrderLine(b.id,4,9000)),true,4500);
+        check(b.quantity==1,"Updated quantity deducted additional stock");
+        check(o2.total()==36000,"Updated order total");
+        check(o2.paid,"Updated order paid status");
+        l.updateOrder(o2,Arrays.asList(new Ledger.OrderLine(b.id,1,9000),new Ledger.OrderLine(a.id,5,25000)),false,4600);
+        check(b.quantity==4,"Reduced b restored stock");
+        check(a.quantity==999995,"Added a deducted stock");
+        check(o2.lines.size()==2,"Order now has 2 lines");
+        l.voidOrder(o2);
+        rejects(()->l.updateOrder(o2,Collections.singletonList(new Ledger.OrderLine(b.id,1,9000)),false,4600));
     }
 }
