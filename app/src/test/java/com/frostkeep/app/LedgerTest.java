@@ -78,6 +78,29 @@ public class LedgerTest {
         check(a.quantity==999995,"Added a deducted stock");
         check(o2.lines.size()==2,"Order now has 2 lines");
         l.voidOrder(o2);
-        rejects(()->l.updateOrder(o2,Collections.singletonList(new Ledger.OrderLine(b.id,1,9000)),false,4600));
+        check(b.quantity==5&&a.quantity==1000000&&o2.voided,"Void restored both items");
+        // Reopen voided order for editing
+        l.updateOrder(o2,Collections.singletonList(new Ledger.OrderLine(b.id,2,9000)),false,4600);
+        check(!o2.voided,"Reopened order is no longer voided");
+        check(b.quantity==3,"Reopening deducted required stock");
+        check(o2.total()==18000,"Reopened order total updated");
+        rejects(()->l.deleteOrder(o2)); // active order cannot be deleted
+        // Void again and test reinstate
+        l.voidOrder(o2);
+        check(b.quantity==5&&o2.voided,"Voided again");
+        b.quantity=1; // not enough stock for 2 items
+        rejects(()->l.reinstateOrder(o2));
+        check(b.quantity==1&&o2.voided,"Failed reinstate left stock unchanged");
+        b.quantity=5;
+        l.reinstateOrder(o2);
+        check(!o2.voided&&b.quantity==3,"Reinstated order deducted stock and cleared voided flag");
+        // Void and delete
+        l.voidOrder(o2);
+        check(l.orders.contains(o2),"Order present before delete");
+        int salesBefore=l.sales.size();
+        l.deleteOrder(o2);
+        check(!l.orders.contains(o2),"Order removed after delete");
+        check(l.sales.size()==salesBefore-o2.lines.size(),"Sales lines removed after delete");
+        rejects(()->l.deleteOrder(o2));
     }
 }

@@ -40,7 +40,13 @@ The date defaults to today. **Change date** opens a picker for recording earlier
 
 All order lines are validated before any stock changes. Generating an order deducts stock and records revenue whether the order is paid or pending. Prices, item names, customer name and confirmed buying costs are saved as historical snapshots. Subsequent price changes do not change old bills or margins.
 
-Open an order to view its bill, copy the text, or mark payment as received. Payment changes update outstanding balances without adding another sale or deducting more stock. An order can be moved back to pending to correct a mistake. **Void batch order** restores every line to stock and removes its revenue, profit and pending balance. Individual batch lines cannot be voided separately. Deleted products prevent stock restoration; the app reports this rather than partially voiding an order.
+### Voided orders & reinstatement
+
+When an order is voided:
+- **Reinstate order**: Reactivates the order in 1 tap, verifying that required inventory is still available, re-deducting stock, and un-voiding all sales lines.
+- **Edit & reopen**: Reopens the voided order in the batch composer, enabling full editing of quantities and prices. Reopening deducts current required stock and restores the order to active records upon submission.
+- **Delete voided order**: Permanently removes the voided order and all associated sales records after an explicit confirmation dialog. Active orders cannot be deleted; they must be voided first.
+- Reconstructed bills for voided orders provide direct access to reinstate, reopen, or delete.
 
 ### Bills and WhatsApp
 
@@ -56,11 +62,18 @@ The separate Insights page includes 1-day (Today), 7-day, and 30-day revenue gra
 
 Gross profit is selling revenue minus the buying costs captured when recording sales. It can be negative. Sales lacking confirmed costs are excluded from the profit figure with an explicit notice. Pending-payment orders count toward revenue and gross profit; outstanding balances are shown separately in Orders. Expenses, taxes, partial payments and purchase-batch/FIFO costing are not included.
 
-## Settings and data backups
+## Settings, auto-backup and data persistence
 
-Open **Settings → Export backup** or **Import backup**. Android's file picker lets you save a timestamped JSON file in **Downloads** or another location, or restore an existing backup. The export includes all inventory, customer details and quotes, sales, batch lines, historical prices and costs, payment states, void history, and the bill numbering sequence. Bills can be reconstructed from these records.
+### Backup & Restore
+Open **Settings → Export backup** or **Import backup**. Android's file picker lets you save a timestamped JSON file in **Downloads** or another location, or restore an existing backup. The export includes all inventory, customer details and quotes, sales, batch lines, historical prices and costs, payment states, void history, and the bill numbering sequence.
 
-When importing, the app inspects the selected file and presents a confirmation dialog summarizing product, customer, batch order, and sales counts before restoring. Cancelling the picker or confirmation dialog leaves existing data unchanged. Backups are manual and include customer contact details. Clearing app storage or uninstalling removes local working data if not backed up.
+When importing, the app inspects the selected file and presents a confirmation dialog summarizing product, customer, batch order, and sales counts before restoring. Cancelling the picker or confirmation dialog leaves existing data unchanged.
+
+### Data persistence across uninstalls and updates
+- **Standard updates**: Installing a new APK over an existing installation retains all data seamlessly.
+- **Android "Keep app data"**: With `android:hasFragileUserData="true"`, when uninstalling on Android 10 or later, Android provides a checkbox: *"Keep app data"*. Checking this preserves internal database and preferences across uninstalls.
+- **Automatic public storage backup**: On every saved change, Frostkeep automatically writes an updated persistent backup to `Downloads/Frostkeep/Frostkeep-auto-backup.json`. Upon a fresh reinstall after an uninstall, the app automatically detects and recovers this backup if no existing data is found.
+- **Cloud backup**: `android:allowBackup="true"` allows Google Drive / Android Auto Backup to restore app records automatically when syncing to the device's Google account.
 
 ## Build and verify
 

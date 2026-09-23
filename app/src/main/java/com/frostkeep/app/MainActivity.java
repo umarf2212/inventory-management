@@ -3,6 +3,8 @@ package com.frostkeep.app;
 import android.app.*;
 import android.os.Bundle;
 import android.content.*;
+import android.os.*;
+import android.provider.MediaStore;
 import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
 import android.text.*;
@@ -23,9 +25,24 @@ public class MainActivity extends Activity {
         super.onCreate(b); money.setCurrency(Currency.getInstance("INR"));
         if(b!=null) { screen=b.getString("screen","Inventory"); category=b.getString("category","All"); query=b.getString("query",""); lowOnly=b.getBoolean("lowOnly"); days=b.getInt("days",7); }
         String saved=getPreferences(0).getString("ledger",null);
+        boolean restoredFromDisk=false;
+        if(saved==null) {
+            String auto=findAutoBackup();
+            if(auto!=null) {
+                try {
+                    ledger=decode(auto);
+                    saved=auto;
+                    restoredFromDisk=true;
+                } catch(Exception ignored){}
+            }
+        }
         try { ledger=saved==null?Ledger.seeded():decode(saved); }
         catch(Exception e) { new AlertDialog.Builder(this).setTitle("Couldn’t open saved inventory").setMessage("Your saved data has been preserved. Close and reopen the app to try again.").setPositiveButton("Close",(d,w)->finish()).setCancelable(false).show(); return; }
         if(saved==null && !getPreferences(0).edit().putString("ledger",encode()).commit()) { toast("Couldn’t save initial inventory."); finish(); return; }
+        if(restoredFromDisk) {
+            getPreferences(0).edit().putString("ledger",saved).apply();
+            toast("Restored previous data from device storage ("+ledger.items.size()+" products, "+ledger.orders.size()+" orders)");
+        }
         if(saved != null) try {
             if(new JSONObject(saved).getInt("version") == 1 && !getPreferences(0).contains("ledger-v1-before-costs")) {
                 if(!getPreferences(0).edit().putString("ledger-v1-before-costs", saved).commit()) {
@@ -276,7 +293,15 @@ public class MainActivity extends Activity {
             c.addView(text(order.number+" · "+dateText(order.time)+" · "+order.lines.size()+" products",12,MUTED,false));gap(c,10);
             c.addView(text(order.voided?"VOIDED":order.paid?"PAID":"PENDING PAYMENT",12,order.paid?GREEN:Color.rgb(158,103,43),true));gap(c,12);
             if(order.voided) {
-                c.addView(compactButton("View bill  ›",false,()->showBill(order)));
+                LinearLayout acts=row();
+                stretch(acts,compactButton("Reinstate",false,()->reinstateOrder(order)));
+                gapRow(acts,8);
+                stretch(acts,compactButton("Edit & reopen",false,()->editOrder(order)));
+                gapRow(acts,8);
+                stretch(acts,compactButton("Bill ›",false,()->showBill(order)));
+                gapRow(acts,8);
+                acts.addView(iconButton("🗑",Color.rgb(214,61,57),Color.rgb(254,237,237),()->confirmDeleteOrder(order)));
+                c.addView(acts);
             } else {
                 LinearLayout acts=row();
                 stretch(acts,compactButton("Edit order",false,()->editOrder(order)));
@@ -291,10 +316,43 @@ public class MainActivity extends Activity {
     }
     String dateText(long time){return new SimpleDateFormat("dd MMM yyyy",Locale.getDefault()).format(new Date(time));}
     void editOrder(Ledger.Order order) {
-        if(order.voided) { toast("Voided orders cannot be edited."); return; }
         Ledger.Customer cust=ledger.customer(order.customerId);
         if(cust==null) { cust=new Ledger.Customer(); cust.id=order.customerId; cust.name=order.customerName; cust.phone=order.phone; }
         new BatchComposer(cust,order).show();
+    }
+    void reinstateOrder(Ledger.Order order) {
+        new AlertDialog.Builder(this)
+            .setTitle("Reinstate order "+order.number+"?")
+            .setMessage("Reactivate this order, deduct its items from available inventory stock, and restore it to your business records.")
+            .setNegativeButton("Cancel",null)
+            .setPositiveButton("Reinstate",(d,w)->{
+                try {
+                    if(commit(()->ledger.reinstateOrder(order))) {
+                        render();
+                        toast("Order "+order.number+" reinstated");
+                    }
+                } catch(IllegalArgumentException e) {
+                    toast(e.getMessage());
+                }
+            })
+            .show();
+    }
+    void confirmDeleteOrder(Ledger.Order order) {
+        new AlertDialog.Builder(this)
+            .setTitle("Delete voided order "+order.number+"?")
+            .setMessage("Permanently remove order "+order.number+" and its records. This cannot be undone.")
+            .setNegativeButton("Cancel",null)
+            .setPositiveButton("Delete order",(d,w)->{
+                try {
+                    if(commit(()->ledger.deleteOrder(order))) {
+                        render();
+                        toast("Order "+order.number+" deleted");
+                    }
+                } catch(IllegalArgumentException e) {
+                    toast(e.getMessage());
+                }
+            })
+            .show();
     }
     void chooseOrderCustomer() {
         if(ledger.customers.isEmpty()){new AlertDialog.Builder(this).setTitle("Add a customer first").setMessage("Each batch order belongs to a customer.").setNegativeButton("Cancel",null).setPositiveButton("Add customer",(d,w)->{screen="Customers";render();editCustomer(null);}).show();return;}
@@ -316,20 +374,20 @@ public class MainActivity extends Activity {
             this.existingOrder=existingOrder;
             EditText dummy=new EditText(MainActivity.this);dummy.setVisibility(View.GONE);form.addView(dummy);
             form.addView(text(customer.name,22,INK,true));gap(form,6);
-            form.addView(text(existingOrder==null?"Customer quotes fill automatically. You can override the price for this order.":"Edit quantities and selling prices for this order. Stock updates automatically.",13,MUTED,false));
+            form.addView(text(existingOrder==null?"Customer quotes fill automatically. You can override the price for this order.":(existingOrder.voided?"Reopen this voided order. Review quantities and prices; required stock will be deducted upon saving.":"Edit quantities and selling prices for this order. Stock updates automatically."),13,MUTED,false));
             date=new DateInput(form,"Order date",existingOrder==null?0:existingOrder.time);
             payment=select(form,"Payment status",new String[]{"Pending payment","Paid"},existingOrder!=null&&existingOrder.paid?"Paid":"Pending payment");
             gap(form,12);form.addView(lines);
             form.addView(compactButton("＋ Add product",false,this::addProduct));
             gap(form,16);form.addView(summary);gap(form,10);
-            label(form,existingOrder==null?"Saving or generating the bill records sales and deducts stock.":"Saving changes updates sales records and adjusts stock.");
+            label(form,existingOrder==null?"Saving or generating the bill records sales and deducts stock.":(existingOrder.voided?"Reopening this order will deduct items from stock and restore it to active orders.":"Saving changes updates sales records and adjusts stock."));
             gap(form,6);
             LinearLayout btnRow=row();
-            stretch(btnRow,button(existingOrder==null?"Submit":"Save changes",false,()->saveOrder(false)));
+            stretch(btnRow,button(existingOrder==null?"Submit":(existingOrder.voided?"Reopen & submit":"Save changes"),false,()->saveOrder(false)));
             gapRow(btnRow,10);
-            stretch(btnRow,button(existingOrder==null?"Generate bill":"Update & bill",true,()->saveOrder(true)));
+            stretch(btnRow,button(existingOrder==null?"Generate bill":(existingOrder.voided?"Reopen & bill":"Update & bill"),true,()->saveOrder(true)));
             form.addView(btnRow);
-            dialog=dialog(existingOrder==null?"New batch order":"Edit order · "+existingOrder.number,form,null);
+            dialog=dialog(existingOrder==null?"New batch order":(existingOrder.voided?"Reopen order · ":"Edit order · ")+existingOrder.number,form,null);
             dialog.setOnShowListener(d->{
                 if(dialog.getWindow()!=null){
                     dialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
@@ -358,7 +416,7 @@ public class MainActivity extends Activity {
             for(int i=0;i<rows.size();i++) rows.get(i).setNumber(i+1);
         }
         int getOriginalQty(String itemId) {
-            if(existingOrder==null) return 0;
+            if(existingOrder==null||existingOrder.voided) return 0;
             for(Ledger.Sale s:existingOrder.lines) if(s.itemId.equals(itemId)) return s.quantity;
             return 0;
         }
@@ -413,10 +471,11 @@ public class MainActivity extends Activity {
                         else toast("Order "+created[0].number+" submitted to batch orders");
                     }
                 } else {
+                    boolean wasVoided=existingOrder.voided;
                     if(commit(()->ledger.updateOrder(existingOrder,requested,paid,time))){
                         dialog.dismiss();screen="Orders";render();
                         if(openBill) showBill(existingOrder);
-                        else toast("Order "+existingOrder.number+" updated");
+                        else toast("Order "+existingOrder.number+(wasVoided?" reopened & submitted":" updated"));
                     }
                 }
             }catch(IllegalArgumentException e){toast(e.getMessage());}
@@ -531,6 +590,12 @@ public class MainActivity extends Activity {
         }));gap(f,10);f.addView(button("Void batch order",false,()->new AlertDialog.Builder(this).setTitle("Void the entire batch?")
             .setMessage("Restore all products to stock and exclude the order from revenue, profit and pending payments. If payment was received, arrange any refund separately.")
             .setNegativeButton("Cancel",null).setPositiveButton("Void order",(a,b)->{try{if(commit(()->ledger.voidOrder(order))){d.dismiss();render();}}catch(IllegalArgumentException e){toast(e.getMessage());}}).show()));}
+        else {
+            gap(f,18);label(f,"VOIDED ORDER ACTIONS");
+            f.addView(button("Reinstate order",true,()->{d.dismiss();reinstateOrder(order);}));gap(f,10);
+            f.addView(button("Reopen for editing",false,()->{d.dismiss();editOrder(order);}));gap(f,10);
+            f.addView(button("Delete voided order",false,()->{d.dismiss();confirmDeleteOrder(order);}));
+        }
         d.show();
     }
     void copy(String label,String value){((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText(label,value));toast("Copied to clipboard");}
@@ -542,13 +607,13 @@ public class MainActivity extends Activity {
         stretch(btns,button("Export backup",true,this::exportBackup));gapRow(btns,10);
         stretch(btns,button("Import backup",false,this::importBackup));
         c.addView(btns);gap(c,12);
-        c.addView(text("Choose a JSON file to restore or save. Restoring replaces current working data after confirmation.",12,MUTED,false));
+        c.addView(text("Choose a JSON file to restore or save. Data also automatically persists in Downloads/Frostkeep/ across uninstalls. On Android 10+, selecting 'Keep app data' upon uninstall preserves your records automatically.",12,MUTED,false));
         String lastExport=getPreferences(0).getString("lastBackup","");
         String lastImport=getPreferences(0).getString("lastImport","");
         if(!lastExport.isEmpty()){gap(c,14);c.addView(text("Last export: "+lastExport,12,GREEN,true));}
         if(!lastImport.isEmpty()){gap(c,lastExport.isEmpty()?14:6);c.addView(text("Last restore: "+lastImport,12,GREEN,true));}
         addCard(content,c);
-        LinearLayout about=card();about.addView(text("Frostkeep 1.1",18,INK,true));gap(about,8);about.addView(text("Offline storage · INR (₹)\nBackups are manual JSON files that can be exported or restored anytime.",13,MUTED,false));addCard(content,about);
+        LinearLayout about=card();about.addView(text("Frostkeep 1.1",18,INK,true));gap(about,8);about.addView(text("Offline storage · INR (₹)\nData persists automatically in device storage and cloud backup. Reinstalling or updating keeps your records intact.",13,MUTED,false));addCard(content,about);
     }
     void exportBackup() {
         pendingBackup=encode();Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("application/json");
@@ -621,6 +686,97 @@ public class MainActivity extends Activity {
             })
             .show();
     }
+    void autoSavePersistentBackup(String json) {
+        new Thread(() -> {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ContentResolver resolver = getContentResolver();
+                    android.net.Uri contentUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+                    android.net.Uri uri = null;
+                    java.util.List<android.net.Uri> duplicates = new java.util.ArrayList<>();
+                    try (android.database.Cursor c = resolver.query(
+                            contentUri,
+                            new String[]{MediaStore.Downloads._ID},
+                            MediaStore.Downloads.DISPLAY_NAME + " LIKE ?",
+                            new String[]{"Frostkeep-auto-backup%.json"},
+                            MediaStore.Downloads._ID + " DESC")) {
+                        while (c != null && c.moveToNext()) {
+                            long id = c.getLong(c.getColumnIndexOrThrow(MediaStore.Downloads._ID));
+                            android.net.Uri itemUri = ContentUris.withAppendedId(contentUri, id);
+                            if (uri == null) {
+                                uri = itemUri;
+                            } else {
+                                duplicates.add(itemUri);
+                            }
+                        }
+                    } catch(Exception ignored) {}
+                    for (android.net.Uri oldUri : duplicates) {
+                        try { resolver.delete(oldUri, null, null); } catch(Exception ignored) {}
+                    }
+                    if (uri == null) {
+                        ContentValues cv = new ContentValues();
+                        cv.put(MediaStore.MediaColumns.DISPLAY_NAME, "Frostkeep-auto-backup.json");
+                        cv.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                        cv.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Frostkeep");
+                        uri = resolver.insert(contentUri, cv);
+                    }
+                    if (uri != null) {
+                        try (java.io.OutputStream os = resolver.openOutputStream(uri, "wt")) {
+                            if (os != null) {
+                                os.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                                os.flush();
+                            }
+                        }
+                    }
+                } else {
+                    java.io.File dir = new java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Frostkeep");
+                    dir.mkdirs();
+                    java.io.File file = new java.io.File(dir, "Frostkeep-auto-backup.json");
+                    try (java.io.FileOutputStream fos = new java.io.FileOutputStream(file)) {
+                        fos.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        fos.flush();
+                    }
+                }
+            } catch(Throwable ignored) {}
+        }).start();
+    }
+    String findAutoBackup() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentResolver resolver = getContentResolver();
+                android.net.Uri contentUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+                try (android.database.Cursor c = resolver.query(
+                        contentUri,
+                        new String[]{MediaStore.Downloads._ID},
+                        MediaStore.Downloads.DISPLAY_NAME + " LIKE ?",
+                        new String[]{"Frostkeep-auto-backup%.json"},
+                        MediaStore.Downloads._ID + " DESC")) {
+                    if (c != null && c.moveToFirst()) {
+                        long id = c.getLong(c.getColumnIndexOrThrow(MediaStore.Downloads._ID));
+                        android.net.Uri uri = ContentUris.withAppendedId(contentUri, id);
+                        try (java.io.InputStream in = resolver.openInputStream(uri);
+                             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+                            if (in != null) {
+                                byte[] b = new byte[8192]; int n;
+                                while((n = in.read(b)) != -1) out.write(b, 0, n);
+                                return out.toString(java.nio.charset.StandardCharsets.UTF_8.name());
+                            }
+                        }
+                    }
+                }
+            } else {
+                java.io.File dir = new java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Frostkeep");
+                if (dir.exists()) {
+                    java.io.File[] files = dir.listFiles((d, name) -> name.startsWith("Frostkeep-auto-backup") && name.endsWith(".json"));
+                    if (files != null && files.length > 0) {
+                        java.util.Arrays.sort(files, (f1, f2) -> Long.compare(f2.lastModified(), f1.lastModified()));
+                        return new String(java.nio.file.Files.readAllBytes(files[0].toPath()), java.nio.charset.StandardCharsets.UTF_8);
+                    }
+                }
+            }
+        } catch(Throwable ignored) {}
+        return null;
+    }
     boolean commit(Runnable mutation){
         String before=encode();
         try { mutation.run(); }
@@ -628,7 +784,10 @@ public class MainActivity extends Activity {
             if(!before.equals(encode()))try{ledger=decode(before);}catch(Exception ignored){}
             throw e;
         }
-        if(getPreferences(0).edit().putString("ledger",encode()).commit())return true;
+        if(getPreferences(0).edit().putString("ledger",encode()).commit()){
+            autoSavePersistentBackup(encode());
+            return true;
+        }
         try{ledger=decode(before);}catch(Exception ignored){}
         new AlertDialog.Builder(this).setTitle("Couldn’t save changes")
             .setMessage("Your change could not be saved. Close the app and free some device storage before trying again.")

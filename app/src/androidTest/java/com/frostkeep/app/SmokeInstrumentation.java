@@ -44,6 +44,24 @@ public class SmokeInstrumentation extends Instrumentation {
             boolean missingRejected=false;try{LedgerStore.decode(missingItems.toString());}catch(JSONException expected){missingRejected=true;}check(missingRejected,"Missing items array rejected");
             getTargetContext().getSharedPreferences("MainActivity",0).edit().putString("lastImport","23 Sep 2026 · 10:00 AM").commit();
             check(getTargetContext().getSharedPreferences("MainActivity",0).getString("lastImport","").equals("23 Sep 2026 · 10:00 AM"),"Last import preference roundtrip");
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                android.content.ContentValues cv = new android.content.ContentValues();
+                cv.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "test-autobackup.json");
+                cv.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                cv.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/Frostkeep");
+                android.net.Uri uri = getTargetContext().getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
+                check(uri != null, "MediaStore.Downloads file insert");
+                try (java.io.OutputStream out = getTargetContext().getContentResolver().openOutputStream(uri, "wt")) {
+                    out.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+                try (java.io.InputStream in = getTargetContext().getContentResolver().openInputStream(uri)) {
+                    java.io.ByteArrayOutputStream bout = new java.io.ByteArrayOutputStream();
+                    byte[] b = new byte[1024]; int n;
+                    while((n = in.read(b)) != -1) bout.write(b, 0, n);
+                    check(LedgerStore.decode(bout.toString("UTF-8")).outstanding() == 30000, "MediaStore.Downloads roundtrip");
+                }
+                getTargetContext().getContentResolver().delete(uri, null, null);
+            }
             if("true".equals(arguments.getString("seed"))) {
                 Ledger sample=Ledger.seeded();sample.items.get(0).quantity=20;sample.items.get(0).price=10000;sample.items.get(0).costConfirmed=true;
                 sample.items.get(1).quantity=15;sample.items.get(1).price=5000;sample.items.get(1).costConfirmed=true;

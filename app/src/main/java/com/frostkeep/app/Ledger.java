@@ -114,32 +114,38 @@ public final class Ledger {
         orders.add(0, order); return order;
     }
     public void updateOrder(Order order, List<OrderLine> requested, boolean paid, long time) {
-        if(!orders.contains(order) || order.voided) throw new IllegalArgumentException("A voided order cannot be edited.");
+        if(!orders.contains(order)) throw new IllegalArgumentException("Order not found.");
         if(requested.isEmpty()) throw new IllegalArgumentException("Add at least one product.");
         Set<String> seen = new HashSet<>();
         for(OrderLine line:requested) {
             if(!seen.add(line.itemId)) throw new IllegalArgumentException("Combine duplicate products into one line.");
         }
-        for(Sale s:order.lines) {
-            Item item = find(s.itemId);
-            if(item == null) throw new IllegalArgumentException("Cannot update order: an item in the order was deleted.");
-            if((long)item.quantity + s.quantity > 1000000)
-                throw new IllegalArgumentException("Restoring stock for this order exceeds the stock limit.");
-        }
         for(OrderLine line:requested) {
             if(find(line.itemId) == null) throw new IllegalArgumentException("Choose an existing product.");
         }
-        for(Sale s:order.lines) find(s.itemId).quantity += s.quantity;
+        boolean wasVoided = order.voided;
+        if(!wasVoided) {
+            for(Sale s:order.lines) {
+                Item item = find(s.itemId);
+                if(item == null) throw new IllegalArgumentException("Cannot update order: an item in the order was deleted.");
+                if((long)item.quantity + s.quantity > 1000000)
+                    throw new IllegalArgumentException("Restoring stock for this order exceeds the stock limit.");
+            }
+            for(Sale s:order.lines) find(s.itemId).quantity += s.quantity;
+        }
         try {
             for(OrderLine line:requested) validateSale(find(line.itemId), line.quantity, line.price, time);
         } catch(RuntimeException e) {
-            for(Sale s:order.lines) find(s.itemId).quantity -= s.quantity;
+            if(!wasVoided) {
+                for(Sale s:order.lines) find(s.itemId).quantity -= s.quantity;
+            }
             throw e;
         }
         sales.removeAll(order.lines);
         order.lines.clear();
         order.time = time;
         order.paid = paid;
+        order.voided = false;
         Customer customer = customer(order.customerId);
         for(OrderLine line:requested) {
             Sale sale = sell(find(line.itemId), line.quantity, line.price, time, customer);
@@ -160,6 +166,26 @@ public final class Ledger {
         }
         for(Sale sale:order.lines) { find(sale.itemId).quantity += sale.quantity; sale.voided = true; }
         order.voided = true;
+    }
+    public void reinstateOrder(Order order) {
+        if(!orders.contains(order) || !order.voided) throw new IllegalArgumentException("This order is not voided.");
+        for(Sale sale:order.lines) {
+            Item i = find(sale.itemId);
+            if(i == null) throw new IllegalArgumentException("Cannot reinstate: an item in the order was deleted.");
+            if(i.quantity < sale.quantity)
+                throw new IllegalArgumentException("Cannot reinstate: not enough stock for " + i.name + " (" + sale.quantity + " needed, " + i.quantity + " in stock).");
+        }
+        for(Sale sale:order.lines) {
+            find(sale.itemId).quantity -= sale.quantity;
+            sale.voided = false;
+        }
+        order.voided = false;
+    }
+    public void deleteOrder(Order order) {
+        if(!orders.contains(order)) throw new IllegalArgumentException("Order not found.");
+        if(!order.voided) throw new IllegalArgumentException("Only voided orders can be deleted.");
+        sales.removeAll(order.lines);
+        orders.remove(order);
     }
     public long outstanding() { long n = 0; for(Order o:orders) if(!o.paid && !o.voided) n += o.total(); return n; }
     public long profit(long since) { long n = 0; for(Sale s:sales) if(!s.voided && s.time >= since) n += s.profit(); return n; }
