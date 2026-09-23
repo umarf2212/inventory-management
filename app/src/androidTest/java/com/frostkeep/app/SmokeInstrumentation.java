@@ -39,6 +39,11 @@ public class SmokeInstrumentation extends Instrumentation {
             check(LedgerStore.decode(disk).outstanding()==30000,"Export file reloads fully");file.delete();
             JSONObject unsupported=new JSONObject(json);unsupported.put("version",999);
             boolean rejected=false;try{LedgerStore.decode(unsupported.toString());}catch(JSONException expected){rejected=true;}check(rejected,"Future schema rejected");
+            boolean badJsonRejected=false;try{LedgerStore.decode("not valid json");}catch(JSONException expected){badJsonRejected=true;}check(badJsonRejected,"Malformed JSON string rejected");
+            JSONObject missingItems=new JSONObject(json);missingItems.remove("items");
+            boolean missingRejected=false;try{LedgerStore.decode(missingItems.toString());}catch(JSONException expected){missingRejected=true;}check(missingRejected,"Missing items array rejected");
+            getTargetContext().getSharedPreferences("MainActivity",0).edit().putString("lastImport","23 Sep 2026 · 10:00 AM").commit();
+            check(getTargetContext().getSharedPreferences("MainActivity",0).getString("lastImport","").equals("23 Sep 2026 · 10:00 AM"),"Last import preference roundtrip");
             if("true".equals(arguments.getString("seed"))) {
                 Ledger sample=Ledger.seeded();sample.items.get(0).quantity=20;sample.items.get(0).price=10000;sample.items.get(0).costConfirmed=true;
                 sample.items.get(1).quantity=15;sample.items.get(1).price=5000;sample.items.get(1).costConfirmed=true;

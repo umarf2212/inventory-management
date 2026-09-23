@@ -52,15 +52,15 @@ Links follow [WhatsApp's documented click-to-chat format](https://faq.whatsapp.c
 
 ## Insights
 
-The separate Insights page includes 7/30-day revenue graphs, category revenue, units sold, transaction counts and top products. A batch counts as one transaction, with its individual products included in category and product totals.
+The separate Insights page includes 1-day (Today), 7-day, and 30-day revenue graphs, category revenue, units sold, transaction counts and top products. A batch counts as one transaction, with its individual products included in category and product totals.
 
 Gross profit is selling revenue minus the buying costs captured when recording sales. It can be negative. Sales lacking confirmed costs are excluded from the profit figure with an explicit notice. Pending-payment orders count toward revenue and gross profit; outstanding balances are shown separately in Orders. Expenses, taxes, partial payments and purchase-batch/FIFO costing are not included.
 
 ## Settings and data backups
 
-Open **Settings → Export full backup**. Android's file picker lets you save a timestamped JSON file in **Downloads** or another location. The export includes all inventory, customer details and quotes, sales, batch lines, historical prices and costs, payment states, void history, and the bill numbering sequence. Bills can be reconstructed from these records.
+Open **Settings → Export backup** or **Import backup**. Android's file picker lets you save a timestamped JSON file in **Downloads** or another location, or restore an existing backup. The export includes all inventory, customer details and quotes, sales, batch lines, historical prices and costs, payment states, void history, and the bill numbering sequence. Bills can be reconstructed from these records.
 
-The app reports success only after the file is written and closed. Cancelling the picker leaves data unchanged. Backups are manual and include customer contact details. This version provides export only; an in-app restore/import flow is not yet included. Clearing app storage or uninstalling removes the local working data.
+When importing, the app inspects the selected file and presents a confirmation dialog summarizing product, customer, batch order, and sales counts before restoring. Cancelling the picker or confirmation dialog leaves existing data unchanged. Backups are manual and include customer contact details. Clearing app storage or uninstalling removes local working data if not backed up.
 
 ## Build and verify
 

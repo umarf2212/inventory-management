@@ -536,27 +536,90 @@ public class MainActivity extends Activity {
     void copy(String label,String value){((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText(label,value));toast("Copied to clipboard");}
     void settings() {
         title("Settings.","A safe copy of your business, on your terms.");
-        LinearLayout c=card();c.addView(text("Data backup",22,INK,true));gap(c,10);
-        c.addView(text("Export all inventory, customers, quoted prices, sales, batch orders, payment statuses and bill details as one JSON file.",14,MUTED,false));gap(c,18);
-        c.addView(button("Export full backup",true,this::exportBackup));gap(c,12);
-        c.addView(text("Choose Downloads or another folder in the Android file picker. Keep this file for safekeeping; it includes customer contact details.",12,MUTED,false));
-        String last=getPreferences(0).getString("lastBackup","");if(!last.isEmpty()){gap(c,14);c.addView(text("Last export: "+last,12,GREEN,true));}addCard(content,c);
-        LinearLayout about=card();about.addView(text("Frostkeep 1.1",18,INK,true));gap(about,8);about.addView(text("Offline storage · INR (₹)\nBackups are manual. This version exports backups; importing them in the app is not yet available.",13,MUTED,false));addCard(content,about);
+        LinearLayout c=card();c.addView(text("Data backup & restore",22,INK,true));gap(c,10);
+        c.addView(text("Export or restore all inventory, customers, quoted prices, sales, batch orders, payment statuses and bill details as a JSON file.",14,MUTED,false));gap(c,18);
+        LinearLayout btns=row();
+        stretch(btns,button("Export backup",true,this::exportBackup));gapRow(btns,10);
+        stretch(btns,button("Import backup",false,this::importBackup));
+        c.addView(btns);gap(c,12);
+        c.addView(text("Choose a JSON file to restore or save. Restoring replaces current working data after confirmation.",12,MUTED,false));
+        String lastExport=getPreferences(0).getString("lastBackup","");
+        String lastImport=getPreferences(0).getString("lastImport","");
+        if(!lastExport.isEmpty()){gap(c,14);c.addView(text("Last export: "+lastExport,12,GREEN,true));}
+        if(!lastImport.isEmpty()){gap(c,lastExport.isEmpty()?14:6);c.addView(text("Last restore: "+lastImport,12,GREEN,true));}
+        addCard(content,c);
+        LinearLayout about=card();about.addView(text("Frostkeep 1.1",18,INK,true));gap(about,8);about.addView(text("Offline storage · INR (₹)\nBackups are manual JSON files that can be exported or restored anytime.",13,MUTED,false));addCard(content,about);
     }
     void exportBackup() {
         pendingBackup=encode();Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("application/json");
         intent.putExtra(Intent.EXTRA_TITLE,"Frostkeep-backup-"+new SimpleDateFormat("yyyy-MM-dd-HHmmss",Locale.US).format(new Date())+".json");
         try{startActivityForResult(intent,701);}catch(ActivityNotFoundException e){pendingBackup=null;toast("No file picker is available on this device.");}
     }
+    void importBackup() {
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"application/json","text/plain","application/octet-stream","*/*"});
+        try{startActivityForResult(intent,702);}catch(ActivityNotFoundException e){toast("No file picker is available on this device.");}
+    }
     @Override protected void onActivityResult(int request,int result,Intent data) {
-        super.onActivityResult(request,result,data);if(request!=701)return;
-        if(result!=RESULT_OK||data==null||data.getData()==null){pendingBackup=null;return;}
-        try(java.io.OutputStream out=getContentResolver().openOutputStream(data.getData(),"wt")) {
-            if(out==null)throw new java.io.IOException("Unable to open file");
-            out.write((pendingBackup==null?encode():pendingBackup).getBytes(java.nio.charset.StandardCharsets.UTF_8));out.flush();
-        }catch(Exception e){pendingBackup=null;toast("Backup failed. Please choose another location and try again.");return;}
-        pendingBackup=null;getPreferences(0).edit().putString("lastBackup",new SimpleDateFormat("dd MMM yyyy · h:mm a",Locale.getDefault()).format(new Date())).apply();
-        if(screen.equals("Settings"))render();toast("Full backup saved to your chosen location");
+        super.onActivityResult(request,result,data);
+        if(request==701){
+            if(result!=RESULT_OK||data==null||data.getData()==null){pendingBackup=null;return;}
+            try(java.io.OutputStream out=getContentResolver().openOutputStream(data.getData(),"wt")) {
+                if(out==null)throw new java.io.IOException("Unable to open file");
+                out.write((pendingBackup==null?encode():pendingBackup).getBytes(java.nio.charset.StandardCharsets.UTF_8));out.flush();
+            }catch(Exception e){pendingBackup=null;toast("Backup failed. Please choose another location and try again.");return;}
+            pendingBackup=null;getPreferences(0).edit().putString("lastBackup",new SimpleDateFormat("dd MMM yyyy · h:mm a",Locale.getDefault()).format(new Date())).apply();
+            if(screen.equals("Settings"))render();toast("Full backup saved to your chosen location");
+        } else if(request==702){
+            if(result!=RESULT_OK||data==null||data.getData()==null)return;
+            handleImport(data.getData());
+        }
+    }
+    void handleImport(android.net.Uri uri) {
+        String raw;
+        try(java.io.InputStream in=getContentResolver().openInputStream(uri);
+            java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()) {
+            if(in==null)throw new java.io.IOException("Unable to open selected file");
+            byte[] buf=new byte[8192];int len;
+            while((len=in.read(buf))!=-1)out.write(buf,0,len);
+            raw=out.toString(java.nio.charset.StandardCharsets.UTF_8.name());
+        }catch(Exception e){
+            toast("Could not read backup file: "+(e.getMessage()!=null?e.getMessage():"read error"));
+            return;
+        }
+        final Ledger imported;
+        try {
+            imported=decode(raw);
+        }catch(Exception e){
+            new AlertDialog.Builder(this)
+                .setTitle("Invalid backup file")
+                .setMessage("The selected file is not a valid Frostkeep backup or has an unsupported format.\n\nDetails: "+(e.getMessage()!=null?e.getMessage():"format error"))
+                .setPositiveButton("Close",null)
+                .show();
+            return;
+        }
+        String summary="This will replace your current data with the backup file:\n\n"
+            +"• "+imported.items.size()+" product(s)\n"
+            +"• "+imported.customers.size()+" customer(s)\n"
+            +"• "+imported.orders.size()+" batch order(s)\n"
+            +"• "+imported.sales.size()+" sale record(s)\n\n"
+            +"This cannot be undone. Do you want to proceed?";
+        new AlertDialog.Builder(this)
+            .setTitle("Restore backup?")
+            .setMessage(summary)
+            .setNegativeButton("Cancel",null)
+            .setPositiveButton("Restore data",(d,w)->{
+                try {
+                    if(commit(()->{ ledger=imported; query=""; category="All"; lowOnly=false; pendingOrdersOnly=false; })) {
+                        getPreferences(0).edit().putString("lastImport",new SimpleDateFormat("dd MMM yyyy · h:mm a",Locale.getDefault()).format(new Date())).apply();
+                        render();
+                        toast("Backup restored ("+imported.items.size()+" products, "+imported.orders.size()+" orders)");
+                    }
+                }catch(Exception ex){
+                    toast("Failed to restore backup: "+ex.getMessage());
+                }
+            })
+            .show();
     }
     boolean commit(Runnable mutation){
         String before=encode();
